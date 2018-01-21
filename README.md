@@ -11,4 +11,8 @@ It runs implemented in OpenCL (using [pyopencl](https://mathema.tician.de/softwa
 # Getting started
 * Clone
 * Install [pyopencl](https://wiki.tiker.net/PyOpenCL/Installation)
-* tbd ....
+* Install numpy
+* Install imageio
+* Change last line in PhotoBooster.py to set your folders. bootstrap_all_files_in_folder(ctx, queue, "D:\Test", "D:\Test_output")
+
+It is far away from any usability but for now I don't care. Sorry.
