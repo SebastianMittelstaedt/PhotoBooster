@@ -18,3 +18,10 @@ It is implemented in OpenCL (using [pyopencl](https://mathema.tician.de/software
 It is far away from any usability but for now I don't care. Sorry.
 
 If you are brave enough to use it and / or contribute --> thumbs up :) .
+
+# Examples
+
+![Swan](examples/swan.JPG)
+![Swan Boosted](examples/swan_boosted.JPG)
+![Landscape](examples/landscape.JPG)
+![Landscape Boosted](examples/landscape_boosted.JPG)
