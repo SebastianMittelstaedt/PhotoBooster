@@ -6,7 +6,7 @@ PhotoBooster uses the
 * CAT02 color space for chromatic adaption
 * HSI color space for saturation boost
 
-It runs implemented in OpenCL (using [pyopencl](https://mathema.tician.de/software/pyopencl/)).
+It is implemented in OpenCL (using [pyopencl](https://mathema.tician.de/software/pyopencl/)).
 
 # Getting started
 * Clone
@@ -16,3 +16,5 @@ It runs implemented in OpenCL (using [pyopencl](https://mathema.tician.de/softwa
 * Change last line in PhotoBooster.py to set your folders. bootstrap_all_files_in_folder(ctx, queue, "D:\Test", "D:\Test_output")
 
 It is far away from any usability but for now I don't care. Sorry.
+
+If you are brave enough to use it and / or contribute --> thumbs up :) .
