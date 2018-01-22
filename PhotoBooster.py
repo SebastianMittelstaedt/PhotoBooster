@@ -4,6 +4,8 @@ import numpy as np
 from src.py.ColorConversion import ColorConversion
 from src.py.Util import GPU_Buffer, GPU_Image, Stopwatch
 import os
+import sys, getopt
+
 
 
 def get_white_balance_factors(lms, f1, f2):
@@ -87,47 +89,71 @@ def stretch_saturation(context, queue, rgb_gpu, sampling=8.0, f1=0.0, f2=0.98, w
 def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder):
     sw = Stopwatch()
 
-    for root, dirs, files in os.walk(input_folder):
-        for file in files:
-            if file.endswith((".png", ".jpg", ".JPG", ".jpeg", ".bmp")):
-                print("Processing: %s" % (file))
+    with os.scandir(input_folder) as listOfEntries:
+        for entry in listOfEntries:
+            if entry.is_file():
+                file = entry.name
+                if file.endswith((".png", ".jpg", ".JPG", ".jpeg", ".bmp")):
+                    print("Processing: %s" % (file))
 
-                sw.start()
-                image = np.asarray(imageio.imread(os.path.join(input_folder, file)).astype(np.float32))
+                    sw.start()
+                    image = np.asarray(imageio.imread(os.path.join(input_folder, file)).astype(np.float32))
 
-                # JPG cannot save alpha -> remove alpha channel....
-                if image.shape[2] == 4:
-                    image = image[:,:,0:3]
+                    # JPG cannot save alpha -> remove alpha channel....
+                    if image.shape[2] == 4:
+                        image = image[:,:,0:3]
 
-                image_shape = image.shape
-                image = image.flatten()
-                rgb_gpu = GPU_Image(context, image, image_shape)
-                sw.check("Loading")
+                    image_shape = image.shape
+                    image = image.flatten()
+                    rgb_gpu = GPU_Image(context, image, image_shape)
+                    sw.check("Loading")
 
-                white_balanced_gpu, e1 = white_balance(context, queue, rgb_gpu)
-                sw.check("White balance")
+                    white_balanced_gpu, e1 = white_balance(context, queue, rgb_gpu)
+                    sw.check("White balance")
 
-                sat_stretched_gpu, e2 = stretch_saturation(context, queue, white_balanced_gpu, wait=[e1])
-                sw.check("stretch_saturation")
+                    sat_stretched_gpu, e2 = stretch_saturation(context, queue, white_balanced_gpu, wait=[e1])
+                    sw.check("stretch_saturation")
 
-                res = sat_stretched_gpu.copy_buffer_from_gpu(queue, [e2])
-                res = res.reshape(image_shape).astype(np.uint8)
-                sw.check("Loading from GPU")
+                    res = sat_stretched_gpu.copy_buffer_from_gpu(queue, [e2])
+                    res = res.reshape(image_shape).astype(np.uint8)
+                    sw.check("Loading from GPU")
 
-                # jpg is much faster than png, however, now images with alpha cannot be saved ....
-                imageio.imwrite(os.path.join(output_folder, file+".JPG"), res, format="JPG")
-                sw.check("Writing file")
+                    # jpg is much faster than png, however, now images with alpha cannot be saved ....
+                    imageio.imwrite(os.path.join(output_folder, file+".JPG"), res, format="JPG")
+                    sw.check("Writing file")
 
-                GPU_Buffer.release_all()
-                #imageio.imwrite(os.path.join(output_folder, file + ".JPG"), image, format="JPG")
-                sw.end()
+                    GPU_Buffer.release_all()
+                    sw.end()
+
+def get_input_folder_from_args():
+    try:
+        myopts, args = getopt.getopt(sys.argv[1:], "i:")
+    except getopt.GetoptError as e:
+        print(str(e))
+        print("Usage: %s -i input_folder " % sys.argv[0])
+        sys.exit(2)
+
+    for o, a in myopts:
+        if o == '-i':
+            input_folder = a
+
+    return input_folder
 
 
 if __name__ == "__main__":
+
+    # Use the line below for development
+    # input_folder = "D:\Test"
+    input_folder = get_input_folder_from_args()
+
     ctx = cl.create_some_context(interactive=True)
     queue = cl.CommandQueue(ctx)
 
-    bootstrap_all_files_in_folder(ctx, queue, "D:\Test", "D:\Test_output")
+    output_folder = os.path.join(input_folder, "PhotoBooster")
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    bootstrap_all_files_in_folder(ctx, queue, input_folder, output_folder)
 
 
 
