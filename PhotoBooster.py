@@ -58,7 +58,7 @@ def white_balance(context, queue, rgb_gpu, sampling=8.0, f1=0.01, f2=0.99, wait=
 
     return tmp1_gpu, e2
 
-def stretch_saturation(context, queue, rgb_gpu, sampling=8.0, f1=0.0, f2=0.98, wait=None):
+def stretch_saturation(context, queue, rgb_gpu, no_limit_saturation_boost=True, sampling=8.0, f1=0.0, f2=0.98, wait=None):
 
     color_conversion = ColorConversion(context)
     sampled_shape = (np.int(rgb_gpu.shape[0] / sampling), np.int(rgb_gpu.shape[1] / sampling), rgb_gpu.shape[2])
@@ -67,7 +67,10 @@ def stretch_saturation(context, queue, rgb_gpu, sampling=8.0, f1=0.0, f2=0.98, w
     tmp2_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
     sampled_gpu = GPU_Image(context, sampled, sampled_shape)
 
-    sat_gpu = GPU_Buffer(context, np.float32([1.0, 1.3, 1.0]))
+    if no_limit_saturation_boost:
+        sat_gpu = GPU_Buffer(context, np.float32([1.0, 1.3, 1.0]))
+    else:
+        sat_gpu = GPU_Buffer(context, np.float32([1.0, 1.0, 1.0]))
 
     e1 = color_conversion.rgb2hsi(queue, rgb_gpu, tmp1_gpu, wait_for=wait)
     e2 = color_conversion.sample_image(queue, tmp1_gpu, sampled_gpu, [e1])
@@ -86,7 +89,7 @@ def stretch_saturation(context, queue, rgb_gpu, sampling=8.0, f1=0.0, f2=0.98, w
 
     return tmp1_gpu, e2
 
-def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder):
+def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder, no_saturation_boost=False, no_limit_saturation_boost=True):
     sw = Stopwatch()
 
     with os.scandir(input_folder) as listOfEntries:
@@ -111,10 +114,14 @@ def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder):
                     white_balanced_gpu, e1 = white_balance(context, queue, rgb_gpu)
                     sw.check("White balance")
 
-                    sat_stretched_gpu, e2 = stretch_saturation(context, queue, white_balanced_gpu, wait=[e1])
-                    sw.check("stretch_saturation")
+                    if no_saturation_boost:
+                        res = white_balanced_gpu.copy_buffer_from_gpu(queue, [e1])
+                    else:
+                        sat_stretched_gpu, e2 = stretch_saturation(context, queue, white_balanced_gpu, no_limit_saturation_boost, wait=[e1])
+                        sw.check("stretch_saturation")
+                        res = sat_stretched_gpu.copy_buffer_from_gpu(queue, [e2])
 
-                    res = sat_stretched_gpu.copy_buffer_from_gpu(queue, [e2])
+
                     res = res.reshape(image_shape).astype(np.uint8)
                     sw.check("Loading from GPU")
 
@@ -153,7 +160,15 @@ if __name__ == "__main__":
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
-    bootstrap_all_files_in_folder(ctx, queue, input_folder, output_folder)
+    print("Do saturation boost?")
+    no_saturation_boost = input("n/y") == "n"
+
+    no_limit_saturation_boost = True
+    if not no_saturation_boost:
+        print("Limit saturation boost?")
+        no_limit_saturation_boost = input("n/y") == "n"
+
+    bootstrap_all_files_in_folder(ctx, queue, input_folder, output_folder, no_saturation_boost, no_limit_saturation_boost)
 
 
 
