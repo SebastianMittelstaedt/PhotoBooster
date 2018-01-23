@@ -14,15 +14,17 @@ It is implemented in OpenCL (using [pyopencl](https://mathema.tician.de/software
 * Create environment by e.g.,
 ```
 conda create -n photo python=3.6.3
+activate photo
 ```
 * Install required packages
 ```
-* conda install pyopencl
-* conda install -c conda-forge imageio
+conda install pyopencl
+conda install -c conda-forge imageio
 ```
 
 # Run
 ```
+activate photo
 python PhotoBooster.py -i D:\Test
 ```
 This will process all images in "D:\Test" and store the result in "D:\Test\PhotoBooster".
