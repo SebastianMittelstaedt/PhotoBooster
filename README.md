@@ -9,19 +9,35 @@ PhotoBooster uses the
 It is implemented in OpenCL (using [pyopencl](https://mathema.tician.de/software/pyopencl/)).
 
 # Getting started
-* Clone
-* Install [pyopencl](https://wiki.tiker.net/PyOpenCL/Installation)
-* Install numpy
-* Install imageio
-* Change last line in PhotoBooster.py to set your folders. bootstrap_all_files_in_folder(ctx, queue, "D:\Test", "D:\Test_output")
 
+* The easiest way is to install [Anaconda](https://www.anaconda.com/download/). 
+* Create environment by e.g.,
+```
+conda create -n photo python=3.6.3
+```
+* Install required packages
+```
+* conda install pyopencl
+* conda install -c conda-forge imageio
+```
+
+# Run
+```
+python PhotoBooster.py -i D:\Test
+```
+This will process all images in "D:\Test" and store the result in "D:\Test\PhotoBooster".
+
+# Remarks
 It is far away from any usability but for now I don't care. Sorry.
 
 If you are brave enough to use it and / or contribute --> thumbs up :) .
 
 # Examples
-
+Original
 ![Swan](examples/swan.JPG)
+Boosted
 ![Swan Boosted](examples/swan_boosted.JPG)
+Original
 ![Landscape](examples/landscape.JPG)
+Boosted
 ![Landscape Boosted](examples/landscape_boosted.JPG)
