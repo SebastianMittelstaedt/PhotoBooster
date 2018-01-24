@@ -2,7 +2,9 @@ import pyopencl as cl
 import imageio
 import numpy as np
 from src.py.ColorConversion import ColorConversion
-from src.py.Util import GPU_Buffer, GPU_Image, Stopwatch
+from src.py.ImageUtils import ImageUtils
+from src.py.Util import Stopwatch
+from src.py.GPU_Buffers import GPU_Buffer, GPU_Image
 import os
 import sys, getopt
 
@@ -32,6 +34,7 @@ def white_balance(context, queue, rgb_gpu, sampling=8.0, f1=0.01, f2=0.99, wait=
     :return:
     """
     color_conversion = ColorConversion(context)
+    image_utils = ImageUtils(context)
     sampled_shape = (np.int(rgb_gpu.shape[0] / sampling), np.int(rgb_gpu.shape[1] / sampling), rgb_gpu.shape[2])
     sampled = np.zeros(sampled_shape, np.float32).flatten()
     tmp1_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
@@ -45,13 +48,13 @@ def white_balance(context, queue, rgb_gpu, sampling=8.0, f1=0.01, f2=0.99, wait=
     e1 = color_conversion.rgb2lms(queue, rgb_gpu, tmp1_gpu, wait_for=wait)
 
     # Sample CAT02 image down to estimate white balance factors on a much smaller image
-    e2 = color_conversion.sample_image(queue, tmp1_gpu, sampled_gpu, [e1])
+    e2 = image_utils.sample_image(queue, tmp1_gpu, sampled_gpu, [e1])
     lms = sampled_gpu.copy_buffer_from_gpu(queue, [e2]).reshape(sampled_shape)
     white_balance_factor = get_white_balance_factors(lms, f1, f2)
     white_balance_factor_gpu = GPU_Buffer(context, white_balance_factor)
 
     # Perform white balance
-    e1 = color_conversion.white_balance(queue, tmp1_gpu, tmp2_gpu, white_balance_factor_gpu, white_gpu)
+    e1 = image_utils.white_balance(queue, tmp1_gpu, tmp2_gpu, white_balance_factor_gpu, white_gpu)
 
     # Convert CAT02 to RGB
     e2 = color_conversion.lms2rgb(queue, tmp2_gpu, tmp1_gpu, [e1])
@@ -61,6 +64,7 @@ def white_balance(context, queue, rgb_gpu, sampling=8.0, f1=0.01, f2=0.99, wait=
 def stretch_saturation(context, queue, rgb_gpu, no_limit_saturation_boost=True, sampling=8.0, f1=0.0, f2=0.98, wait=None):
 
     color_conversion = ColorConversion(context)
+    image_utils = ImageUtils(context)
     sampled_shape = (np.int(rgb_gpu.shape[0] / sampling), np.int(rgb_gpu.shape[1] / sampling), rgb_gpu.shape[2])
     sampled = np.zeros(sampled_shape, np.float32).flatten()
     tmp1_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
@@ -73,7 +77,7 @@ def stretch_saturation(context, queue, rgb_gpu, no_limit_saturation_boost=True, 
         sat_gpu = GPU_Buffer(context, np.float32([1.0, 1.0, 1.0]))
 
     e1 = color_conversion.rgb2hsi(queue, rgb_gpu, tmp1_gpu, wait_for=wait)
-    e2 = color_conversion.sample_image(queue, tmp1_gpu, sampled_gpu, [e1])
+    e2 = image_utils.sample_image(queue, tmp1_gpu, sampled_gpu, [e1])
 
     hsi = sampled_gpu.copy_buffer_from_gpu(queue, [e2]).reshape(sampled_shape)
     sat_balance = get_white_balance_factors(hsi, f1, f2)
@@ -83,7 +87,7 @@ def stretch_saturation(context, queue, rgb_gpu, no_limit_saturation_boost=True, 
     sat_balance[5] = 1.0
     sat_balance_gpu = GPU_Buffer(context, sat_balance)
 
-    e1 = color_conversion.white_balance(queue, tmp1_gpu, tmp2_gpu, sat_balance_gpu, sat_gpu)
+    e1 = image_utils.white_balance(queue, tmp1_gpu, tmp2_gpu, sat_balance_gpu, sat_gpu)
 
     e2 = color_conversion.hsi2rgb(queue, tmp2_gpu, tmp1_gpu, [e1])
 
