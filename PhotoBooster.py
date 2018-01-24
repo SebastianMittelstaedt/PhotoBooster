@@ -9,7 +9,6 @@ import os
 import sys, getopt
 
 
-
 def get_white_balance_factors(lms, f1, f2):
     l = np.sort(lms[:,:,0].flatten())
     m = np.sort(lms[:, :, 1].flatten())
@@ -24,6 +23,7 @@ def get_white_balance_factors(lms, f1, f2):
     s2 = s[np.int(0.5 + f2 * (l.shape[0] - 1))]
 
     return np.asarray([l1,l2,m1,m2,s1,s2])
+
 
 def white_balance(context, queue, rgb_gpu, sampling=8.0, f1=0.01, f2=0.99, wait=None):
     """
@@ -61,6 +61,7 @@ def white_balance(context, queue, rgb_gpu, sampling=8.0, f1=0.01, f2=0.99, wait=
 
     return tmp1_gpu, e2
 
+
 def stretch_saturation(context, queue, rgb_gpu, no_limit_saturation_boost=True, sampling=8.0, f1=0.0, f2=0.98, wait=None):
 
     color_conversion = ColorConversion(context)
@@ -92,6 +93,7 @@ def stretch_saturation(context, queue, rgb_gpu, no_limit_saturation_boost=True, 
     e2 = color_conversion.hsi2rgb(queue, tmp2_gpu, tmp1_gpu, [e1])
 
     return tmp1_gpu, e2
+
 
 def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder, no_saturation_boost=False, no_limit_saturation_boost=True):
     sw = Stopwatch()
@@ -125,7 +127,6 @@ def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder, n
                         sw.check("stretch_saturation")
                         res = sat_stretched_gpu.copy_buffer_from_gpu(queue, [e2])
 
-
                     res = res.reshape(image_shape).astype(np.uint8)
                     sw.check("Loading from GPU")
 
@@ -135,6 +136,7 @@ def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder, n
 
                     GPU_Buffer.release_all()
                     sw.end()
+
 
 def get_input_folder_from_args():
     try:

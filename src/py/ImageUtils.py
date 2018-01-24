@@ -1,5 +1,6 @@
 import pyopencl as cl
 
+
 class ImageUtils():
     def __init__(self, context, path="src/opencl/ImageUtils.cl"):
         file = open(path,"r")

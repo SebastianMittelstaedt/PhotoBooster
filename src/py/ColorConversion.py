@@ -1,5 +1,6 @@
 import pyopencl as cl
 
+
 class ColorConversion():
     def __init__(self, context, path="src/opencl/ColorConversion.cl"):
         file = open(path,"r")
