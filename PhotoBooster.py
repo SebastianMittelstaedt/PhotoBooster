@@ -7,6 +7,7 @@ from src.py.Util import Stopwatch
 from src.py.GPU_Buffers import GPU_Buffer, GPU_Image
 import os
 import sys, getopt
+import argparse
 
 
 def get_white_balance_factors(lms, f1, f2):
@@ -95,7 +96,7 @@ def stretch_saturation(context, queue, rgb_gpu, no_limit_saturation_boost=True, 
     return tmp1_gpu, e2
 
 
-def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder, no_saturation_boost=False, no_limit_saturation_boost=True):
+def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder, no_saturation_boost, no_limit_saturation_boost, white_balance_factor, saturation_boost_factor):
     sw = Stopwatch()
 
     with os.scandir(input_folder) as listOfEntries:
@@ -117,13 +118,13 @@ def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder, n
                     rgb_gpu = GPU_Image(context, image, image_shape)
                     sw.check("Loading")
 
-                    white_balanced_gpu, e1 = white_balance(context, queue, rgb_gpu)
+                    white_balanced_gpu, e1 = white_balance(context, queue, rgb_gpu, f1=1.0-white_balance_factor, f2=white_balance_factor)
                     sw.check("White balance")
 
                     if no_saturation_boost:
                         res = white_balanced_gpu.copy_buffer_from_gpu(queue, [e1])
                     else:
-                        sat_stretched_gpu, e2 = stretch_saturation(context, queue, white_balanced_gpu, no_limit_saturation_boost, wait=[e1])
+                        sat_stretched_gpu, e2 = stretch_saturation(context, queue, white_balanced_gpu, no_limit_saturation_boost, f1=0.0, f2=saturation_boost_factor, wait=[e1])
                         sw.check("stretch_saturation")
                         res = sat_stretched_gpu.copy_buffer_from_gpu(queue, [e2])
 
@@ -139,25 +140,31 @@ def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder, n
 
 
 def get_input_folder_from_args():
-    try:
-        myopts, args = getopt.getopt(sys.argv[1:], "i:")
-    except getopt.GetoptError as e:
-        print(str(e))
-        print("Usage: %s -i input_folder " % sys.argv[0])
-        sys.exit(2)
+    parser = argparse.ArgumentParser(description='python cli')
+    parser.add_argument("-i", "--input_folder", help="Input folder which is processed", required=True)
+    parser.add_argument("-w", "--white_balance", help="White balance factor", required=False)
+    parser.add_argument("-s", "--saturation_boost", help="Saturation boost factor", required=False)
 
-    for o, a in myopts:
-        if o == '-i':
-            input_folder = a
+    # parse input arguments
+    args = parser.parse_args()
 
-    return input_folder
+    input_folder = args.input_folder
+    white_balance_factor = float(args.white_balance)
+    saturation_boost_factor = float(args.saturation_boost)
+
+    if not white_balance_factor:
+        white_balance_factor = 0.99
+    if not saturation_boost_factor:
+        saturation_boost_factor = 0.98
+
+    return input_folder, white_balance_factor, saturation_boost_factor
 
 
 if __name__ == "__main__":
 
     # Use the line below for development
     # input_folder = "D:\Test"
-    input_folder = get_input_folder_from_args()
+    input_folder, white_balance_factor, saturation_boost_factor = get_input_folder_from_args()
 
     ctx = cl.create_some_context(interactive=True)
     queue = cl.CommandQueue(ctx)
@@ -174,7 +181,7 @@ if __name__ == "__main__":
         print("Limit saturation boost?")
         no_limit_saturation_boost = input("n/y") == "n"
 
-    bootstrap_all_files_in_folder(ctx, queue, input_folder, output_folder, no_saturation_boost, no_limit_saturation_boost)
+    bootstrap_all_files_in_folder(ctx, queue, input_folder, output_folder, no_saturation_boost, no_limit_saturation_boost, white_balance_factor, saturation_boost_factor)
 
 
 
