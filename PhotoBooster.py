@@ -6,7 +6,7 @@ from src.py.ImageUtils import ImageUtils
 from src.py.Util import Stopwatch
 from src.py.GPU_Buffers import GPU_Buffer, GPU_Image
 import os
-import sys, getopt
+from scipy import signal
 import argparse
 
 
@@ -40,6 +40,7 @@ def white_balance(context, queue, rgb_gpu, sampling=8.0, f1=0.01, f2=0.99, wait=
     sampled = np.zeros(sampled_shape, np.float32).flatten()
     tmp1_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
     tmp2_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
+    #tmp3_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
     sampled_gpu = GPU_Image(context, sampled, sampled_shape)
 
     # Reference white D65 in CAT02
@@ -48,14 +49,17 @@ def white_balance(context, queue, rgb_gpu, sampling=8.0, f1=0.01, f2=0.99, wait=
     # Convert RGB to CAT02
     e1 = color_conversion.rgb2lms(queue, rgb_gpu, tmp1_gpu, wait_for=wait)
 
+    tmp3_gpu, e3 = remove_pixel_errors(context, queue, tmp1_gpu, [e1])
+
+
     # Sample CAT02 image down to estimate white balance factors on a much smaller image
-    e2 = image_utils.sample_image(queue, tmp1_gpu, sampled_gpu, [e1])
+    e2 = image_utils.sample_image(queue, tmp3_gpu, sampled_gpu, [e3])
     lms = sampled_gpu.copy_buffer_from_gpu(queue, [e2]).reshape(sampled_shape)
     white_balance_factor = get_white_balance_factors(lms, f1, f2)
     white_balance_factor_gpu = GPU_Buffer(context, white_balance_factor)
 
     # Perform white balance
-    e1 = image_utils.white_balance(queue, tmp1_gpu, tmp2_gpu, white_balance_factor_gpu, white_gpu)
+    e1 = image_utils.white_balance(queue, tmp3_gpu, tmp2_gpu, white_balance_factor_gpu, white_gpu, [e2])
 
     # Convert CAT02 to RGB
     e2 = color_conversion.lms2rgb(queue, tmp2_gpu, tmp1_gpu, [e1])
@@ -71,6 +75,7 @@ def stretch_saturation(context, queue, rgb_gpu, no_limit_saturation_boost=True, 
     sampled = np.zeros(sampled_shape, np.float32).flatten()
     tmp1_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
     tmp2_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
+    #tmp3_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
     sampled_gpu = GPU_Image(context, sampled, sampled_shape)
 
     if no_limit_saturation_boost:
@@ -91,9 +96,90 @@ def stretch_saturation(context, queue, rgb_gpu, no_limit_saturation_boost=True, 
 
     e1 = image_utils.white_balance(queue, tmp1_gpu, tmp2_gpu, sat_balance_gpu, sat_gpu)
 
-    e2 = color_conversion.hsi2rgb(queue, tmp2_gpu, tmp1_gpu, [e1])
+    tmp3_gpu, e3 = sharpen_image(context, queue, tmp2_gpu, [e1])
+
+    e2 = color_conversion.hsi2rgb(queue, tmp3_gpu, tmp1_gpu, [e3])
 
     return tmp1_gpu, e2
+
+def remove_pixel_errors(context, queue, lms_gpu, wait):
+    image_utils = ImageUtils(context)
+    tmp1_gpu = GPU_Image(context, np.empty_like(lms_gpu.cpu_buffer), lms_gpu.shape)
+    tmp2_gpu = GPU_Image(context, np.empty_like(lms_gpu.cpu_buffer), lms_gpu.shape)
+
+    gauss = generate_gauss_kernel(1)
+    gauss_cpu = GPU_Buffer(context, gauss)
+
+    e1 = image_utils.low_pass_x(queue, lms_gpu, tmp1_gpu, gauss_cpu, wait_for=wait)
+    e2 = image_utils.low_pass_y(queue, tmp1_gpu, tmp2_gpu, gauss_cpu, wait_for=[e1])
+
+    return tmp2_gpu, e2
+
+
+def sharpen_image(context, queue, hsi_gpu, wait):
+    image_utils = ImageUtils(context)
+    tmp1_gpu = GPU_Image(context, np.empty_like(hsi_gpu.cpu_buffer), hsi_gpu.shape)
+    tmp2_gpu = GPU_Image(context, np.empty_like(hsi_gpu.cpu_buffer), hsi_gpu.shape)
+
+    gauss = generate_gauss_kernel(2)
+    gauss_cpu = GPU_Buffer(context, gauss)
+
+    e1 = image_utils.low_pass_x(queue, hsi_gpu, tmp1_gpu, gauss_cpu, wait_for=wait)
+    e2 = image_utils.low_pass_y(queue, tmp1_gpu, tmp2_gpu, gauss_cpu, wait_for=[e1])
+    e3 = image_utils.high_pass(queue,hsi_gpu,tmp2_gpu,tmp1_gpu,wait_for=[e2])
+
+    return tmp1_gpu, e3
+
+
+def bootstrap_all_files_in_folder2(context, queue, input_folder, output_folder, no_saturation_boost, no_limit_saturation_boost, white_balance_factor, saturation_boost_factor):
+    sw = Stopwatch()
+
+    with os.scandir(input_folder) as listOfEntries:
+        for entry in listOfEntries:
+            if entry.is_file():
+                file = entry.name
+                if file.endswith((".png", ".jpg", ".JPG", ".jpeg", ".bmp")):
+                    print("Processing: %s" % (file))
+
+                    sw.start()
+                    image = np.asarray(imageio.imread(os.path.join(input_folder, file)).astype(np.float32))
+
+                    # JPG cannot save alpha -> remove alpha channel....
+                    if image.shape[2] == 4:
+                        image = image[:,:,0:3]
+
+                    image_shape = image.shape
+                    image = image.flatten()
+                    rgb_gpu = GPU_Image(context, image, image_shape)
+                    sw.check("Loading")
+
+                    hsi_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
+                    tmp1_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
+                    tmp2_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
+
+                    image_utils = ImageUtils(context)
+                    color_conversion = ColorConversion(context)
+
+                    e0 = color_conversion.rgb2hsi(queue,rgb_gpu,hsi_gpu)
+
+                    e1 = image_utils.low_pass_x(queue,hsi_gpu,tmp1_gpu, [e0])
+                    e2 = image_utils.low_pass_y(queue, tmp1_gpu, tmp2_gpu, wait_for=[e1])
+                    e3 = image_utils.high_pass(queue, hsi_gpu, tmp2_gpu, tmp1_gpu, wait_for=[e2])
+
+                    e4 = color_conversion.hsi2rgb(queue, tmp1_gpu, tmp2_gpu, wait_for=[e3])
+
+                    res = tmp2_gpu.copy_buffer_from_gpu(queue, [e4])
+                    res = res.reshape(image_shape).astype(np.uint8)
+                    sw.check("Loading from GPU")
+
+                    # jpg is much faster than png, however, now images with alpha cannot be saved ....
+                    imageio.imwrite(os.path.join(output_folder, file + ".JPG"), res, format="JPG")
+                    sw.check("Writing file")
+
+                    GPU_Buffer.release_all()
+                    sw.end()
+
+
 
 
 def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder, no_saturation_boost, no_limit_saturation_boost, white_balance_factor, saturation_boost_factor):
@@ -149,19 +235,26 @@ def get_input_folder_from_args():
     args = parser.parse_args()
 
     input_folder = args.input_folder
+
+    if not args.white_balance:
+        args.white_balance = 0.99
+    if not args.saturation_boost:
+        args.saturation_boost = 0.98
+
     white_balance_factor = float(args.white_balance)
     saturation_boost_factor = float(args.saturation_boost)
 
-    if not white_balance_factor:
-        white_balance_factor = 0.99
-    if not saturation_boost_factor:
-        saturation_boost_factor = 0.98
 
     return input_folder, white_balance_factor, saturation_boost_factor
 
 
-if __name__ == "__main__":
+def generate_gauss_kernel(std):
+    w = 4*std+1 # Covers >95% of kernel
+    g = signal.gaussian(w, std=std)
+    return g / g.sum()
 
+
+if __name__ == "__main__":
     # Use the line below for development
     # input_folder = "D:\Test"
     input_folder, white_balance_factor, saturation_boost_factor = get_input_folder_from_args()

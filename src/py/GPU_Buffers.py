@@ -9,6 +9,7 @@ class GPU_Buffer:
     def __init__(self, context, cpu_buffer):
         self.cpu_buffer = cpu_buffer
         self.gpu_buffer = cl.Buffer(context, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=cpu_buffer)
+        self.shape_gpu = cl.Buffer(context, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(list(cpu_buffer.shape)))
         GPU_Buffer.buffers.append(self.gpu_buffer)
 
     def copy_buffer_from_gpu(self, queue,  wait):
