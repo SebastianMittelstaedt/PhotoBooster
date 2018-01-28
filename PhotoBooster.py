@@ -40,11 +40,13 @@ def white_balance(context, queue, rgb_gpu, sampling=8.0, f1=0.01, f2=0.99, wait=
     sampled = np.zeros(sampled_shape, np.float32).flatten()
     tmp1_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
     tmp2_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
-    #tmp3_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
     sampled_gpu = GPU_Image(context, sampled, sampled_shape)
 
     # Reference white D65 in CAT02
-    white_gpu = GPU_Buffer(context, np.float32([94.92728, 103.53711, 108.73741]))
+    white_gpu_D65 = GPU_Buffer(context, np.float32([94.92728, 103.53711, 108.73741]))
+    white_gpu_D50 = GPU_Buffer(context, np.float32([93.34584361252917, 101.16413866124918, 82.38235300513887]))
+    white_gpu_D55 = GPU_Buffer(context, np.float32([94.05059066549288, 102.25412538388703, 92.01687462131484]))
+    white_gpu = white_gpu_D55
 
     # Convert RGB to CAT02
     e1 = color_conversion.rgb2lms(queue, rgb_gpu, tmp1_gpu, wait_for=wait)
@@ -75,7 +77,6 @@ def stretch_saturation(context, queue, rgb_gpu, no_limit_saturation_boost=True, 
     sampled = np.zeros(sampled_shape, np.float32).flatten()
     tmp1_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
     tmp2_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
-    #tmp3_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
     sampled_gpu = GPU_Image(context, sampled, sampled_shape)
 
     if no_limit_saturation_boost:
@@ -101,6 +102,7 @@ def stretch_saturation(context, queue, rgb_gpu, no_limit_saturation_boost=True, 
     e2 = color_conversion.hsi2rgb(queue, tmp3_gpu, tmp1_gpu, [e3])
 
     return tmp1_gpu, e2
+
 
 def remove_pixel_errors(context, queue, lms_gpu, wait):
     image_utils = ImageUtils(context)
@@ -129,57 +131,6 @@ def sharpen_image(context, queue, hsi_gpu, wait):
     e3 = image_utils.high_pass(queue,hsi_gpu,tmp2_gpu,tmp1_gpu,wait_for=[e2])
 
     return tmp1_gpu, e3
-
-
-def bootstrap_all_files_in_folder2(context, queue, input_folder, output_folder, no_saturation_boost, no_limit_saturation_boost, white_balance_factor, saturation_boost_factor):
-    sw = Stopwatch()
-
-    with os.scandir(input_folder) as listOfEntries:
-        for entry in listOfEntries:
-            if entry.is_file():
-                file = entry.name
-                if file.endswith((".png", ".jpg", ".JPG", ".jpeg", ".bmp")):
-                    print("Processing: %s" % (file))
-
-                    sw.start()
-                    image = np.asarray(imageio.imread(os.path.join(input_folder, file)).astype(np.float32))
-
-                    # JPG cannot save alpha -> remove alpha channel....
-                    if image.shape[2] == 4:
-                        image = image[:,:,0:3]
-
-                    image_shape = image.shape
-                    image = image.flatten()
-                    rgb_gpu = GPU_Image(context, image, image_shape)
-                    sw.check("Loading")
-
-                    hsi_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
-                    tmp1_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
-                    tmp2_gpu = GPU_Image(context, np.empty_like(rgb_gpu.cpu_buffer), rgb_gpu.shape)
-
-                    image_utils = ImageUtils(context)
-                    color_conversion = ColorConversion(context)
-
-                    e0 = color_conversion.rgb2hsi(queue,rgb_gpu,hsi_gpu)
-
-                    e1 = image_utils.low_pass_x(queue,hsi_gpu,tmp1_gpu, [e0])
-                    e2 = image_utils.low_pass_y(queue, tmp1_gpu, tmp2_gpu, wait_for=[e1])
-                    e3 = image_utils.high_pass(queue, hsi_gpu, tmp2_gpu, tmp1_gpu, wait_for=[e2])
-
-                    e4 = color_conversion.hsi2rgb(queue, tmp1_gpu, tmp2_gpu, wait_for=[e3])
-
-                    res = tmp2_gpu.copy_buffer_from_gpu(queue, [e4])
-                    res = res.reshape(image_shape).astype(np.uint8)
-                    sw.check("Loading from GPU")
-
-                    # jpg is much faster than png, however, now images with alpha cannot be saved ....
-                    imageio.imwrite(os.path.join(output_folder, file + ".JPG"), res, format="JPG")
-                    sw.check("Writing file")
-
-                    GPU_Buffer.release_all()
-                    sw.end()
-
-
 
 
 def bootstrap_all_files_in_folder(context, queue, input_folder, output_folder, no_saturation_boost, no_limit_saturation_boost, white_balance_factor, saturation_boost_factor):
