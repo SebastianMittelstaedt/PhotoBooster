@@ -204,14 +204,15 @@ class ColorConversion():
 
 if __name__ == "__main__":
     # Whitepoints from https://de.mathworks.com/help/images/ref/whitepoint.html
-    # Conversion to CAT02 for chromatic adaption
-    xyz_E = [98.07, 100.00, 118.22] # Cold
+    # Conversion to CAT02 for chromatic adaption from D65 to x
+    xyz_C = [98.07, 100.00, 118.22] # Cold
     xyz_D65 = [95.04, 100.00, 108.88] # Normal - cold
+    xyz_E = [100.0, 100.0, 100.0] # Normal
     xyz_D55 = [95.68, 100.00, 92.14] # Normal - warm
     xyz_50 = [96.42, 100.00, 82.51] # Warm
     xyz_A = [109.85, 100.00, 35.58] # Extra warm
 
-    rgb = ColorConversion.xyz2rgb_cpu(xyz_D55)
+    rgb = ColorConversion.xyz2rgb_cpu(xyz_C)
     lms = ColorConversion.rgb2lms_cpu(rgb)
     print(rgb)
     print(lms)
